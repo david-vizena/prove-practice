@@ -7,7 +7,7 @@ grafana:
   adminPassword: "admin123"  # Change this in production!
   service:
     type: NodePort
-    nodePort: 3000
+    nodePort: 30000
   persistence:
     enabled: true
     size: 10Gi
@@ -29,7 +29,7 @@ prometheus:
   enabled: true
   service:
     type: NodePort
-    nodePort: 9090
+    nodePort: 30090
   persistence:
     enabled: true
     size: 10Gi
@@ -49,7 +49,7 @@ alertmanager:
   enabled: true
   service:
     type: NodePort
-    nodePort: 9093
+    nodePort: 30093
   persistence:
     enabled: true
     size: 2Gi

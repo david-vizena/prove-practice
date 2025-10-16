@@ -25,7 +25,7 @@ jaeger:
 # Service configuration
 service:
   type: NodePort
-  nodePort: 16686
+  nodePort: 30686
 
 # Ingress for external access
 ingress:
