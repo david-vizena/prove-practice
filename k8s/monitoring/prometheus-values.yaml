@@ -1,0 +1,67 @@
+# Prometheus Helm values for SRE interview prep
+# This configures Prometheus with Grafana and AlertManager
+
+# Grafana configuration
+grafana:
+  enabled: true
+  adminPassword: "admin123"  # Change this in production!
+  service:
+    type: NodePort
+    nodePort: 3000
+  persistence:
+    enabled: true
+    size: 10Gi
+  dashboardProviders:
+    dashboardproviders.yaml:
+      apiVersion: 1
+      providers:
+      - name: 'default'
+        orgId: 1
+        folder: ''
+        type: file
+        disableDeletion: false
+        editable: true
+        options:
+          path: /var/lib/grafana/dashboards/default
+
+# Prometheus configuration
+prometheus:
+  enabled: true
+  service:
+    type: NodePort
+    nodePort: 9090
+  persistence:
+    enabled: true
+    size: 10Gi
+  prometheusSpec:
+    retention: 15d
+    storageSpec:
+      volumeClaimTemplate:
+        spec:
+          storageClassName: standard
+          accessModes: ["ReadWriteOnce"]
+          resources:
+            requests:
+              storage: 10Gi
+
+# AlertManager configuration
+alertmanager:
+  enabled: true
+  service:
+    type: NodePort
+    nodePort: 9093
+  persistence:
+    enabled: true
+    size: 2Gi
+
+# Node Exporter for node metrics
+nodeExporter:
+  enabled: true
+
+# Kube State Metrics for Kubernetes metrics
+kubeStateMetrics:
+  enabled: true
+
+# Service Monitor for our applications
+serviceMonitor:
+  enabled: true

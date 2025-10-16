@@ -1,0 +1,36 @@
+# Jaeger Helm values for distributed tracing
+# This configures Jaeger for our microservices tracing
+
+# Jaeger Operator configuration
+jaeger:
+  strategy: allInOne  # Single pod deployment for simplicity
+  allInOne:
+    enabled: true
+    image: jaegertracing/all-in-one:1.45
+    resources:
+      limits:
+        cpu: 500m
+        memory: 512Mi
+      requests:
+        cpu: 200m
+        memory: 256Mi
+    options:
+      query:
+        base-path: /jaeger
+      storage:
+        type: memory
+        memory:
+          max-traces: 100000
+
+# Service configuration
+service:
+  type: NodePort
+  nodePort: 16686
+
+# Ingress for external access
+ingress:
+  enabled: false  # We'll use NodePort for simplicity
+
+# Persistence (disabled for simplicity, uses in-memory storage)
+persistence:
+  enabled: false
