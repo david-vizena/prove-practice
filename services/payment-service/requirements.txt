@@ -1,0 +1,28 @@
+# Payment Service Dependencies
+# Core FastAPI application
+fastapi==0.104.1
+uvicorn[standard]==0.24.0
+
+# Database
+asyncpg==0.29.0
+sqlalchemy[asyncio]==2.0.23
+
+# OpenTelemetry instrumentation
+opentelemetry-api==1.21.0
+opentelemetry-sdk==1.21.0
+opentelemetry-instrumentation-fastapi==0.42b0
+opentelemetry-instrumentation-asyncpg==0.42b0
+opentelemetry-instrumentation-httpx==0.42b0
+opentelemetry-exporter-jaeger==1.21.0
+opentelemetry-exporter-prometheus==1.12.0rc1
+
+# HTTP client
+httpx==0.25.2
+
+# Logging and monitoring
+structlog==23.2.0
+prometheus-client==0.19.0
+
+# Development
+pytest==7.4.3
+pytest-asyncio==0.21.1
