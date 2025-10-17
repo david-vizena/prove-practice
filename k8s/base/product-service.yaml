@@ -1,0 +1,115 @@
+# Product Service Kubernetes Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: product-service
+  namespace: default
+  labels:
+    app: product-service
+    service: product-service
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: product-service
+  template:
+    metadata:
+      labels:
+        app: product-service
+        service: product-service
+    spec:
+      containers:
+      - name: product-service
+        image: python:3.11-slim
+        ports:
+        - containerPort: 5000
+          name: http
+        env:
+        - name: PORT
+          value: "5000"
+        - name: DATABASE_URL
+          value: "sqlite:///app/products.db"
+        - name: JAEGER_AGENT_HOST
+          value: "jaeger-collector.monitoring.svc.cluster.local"
+        - name: JAEGER_AGENT_PORT
+          value: "14268"
+        - name: ENVIRONMENT
+          value: "development"
+        - name: DEBUG
+          value: "false"
+        command: ["/bin/bash"]
+        args:
+        - -c
+        - |
+          pip install -r /app/requirements.txt
+          python /app/app.py
+        volumeMounts:
+        - name: app-code
+          mountPath: /app
+        - name: app-data
+          mountPath: /app/data
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "100m"
+          limits:
+            memory: "256Mi"
+            cpu: "200m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 5000
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 5000
+          initialDelaySeconds: 5
+          periodSeconds: 5
+      volumes:
+      - name: app-code
+        configMap:
+          name: product-service-code
+      - name: app-data
+        emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: product-service
+  namespace: default
+  labels:
+    app: product-service
+spec:
+  type: ClusterIP
+  ports:
+  - port: 5000
+    targetPort: 5000
+    protocol: TCP
+    name: http
+  selector:
+    app: product-service
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: product-service-code
+  namespace: default
+data:
+  app.py: |
+    # Product Service code will be injected here
+  requirements.txt: |
+    Flask==3.0.0
+    Flask-CORS==4.0.0
+    SQLAlchemy==2.0.23
+    Flask-SQLAlchemy==3.1.1
+    opentelemetry-api==1.21.0
+    opentelemetry-sdk==1.21.0
+    opentelemetry-instrumentation-flask==0.42b0
+    opentelemetry-instrumentation-sqlalchemy==0.42b0
+    opentelemetry-instrumentation-requests==0.42b0
+    opentelemetry-exporter-jaeger==1.21.0
+    opentelemetry-exporter-prometheus==1.12.0rc1
+    requests==2.31.0
+    structlog==23.2.0

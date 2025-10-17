@@ -285,6 +285,207 @@ func createOrder(c *gin.Context) {
 	c.JSON(http.StatusCreated, order)
 }
 
+// getOrders handles GET /orders
+func getOrders(c *gin.Context) {
+	ctx := c.Request.Context()
+	span := trace.SpanFromContext(ctx)
+	start := time.Now()
+
+	userID := c.Query("user_id")
+	status := c.Query("status")
+	limitStr := c.DefaultQuery("limit", "10")
+	offsetStr := c.DefaultQuery("offset", "0")
+
+	limit, err := strconv.Atoi(limitStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid limit parameter"})
+		return
+	}
+
+	offset, err := strconv.Atoi(offsetStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid offset parameter"})
+		return
+	}
+
+	span.SetAttributes(
+		attribute.String("filter.user_id", userID),
+		attribute.String("filter.status", status),
+		attribute.Int("filter.limit", limit),
+		attribute.Int("filter.offset", offset),
+	)
+
+	// Build query
+	query := "SELECT id, user_id, product_id, quantity, total_price, status, created_at, updated_at FROM orders WHERE 1=1"
+	args := []interface{}{}
+	argIndex := 1
+
+	if userID != "" {
+		query += fmt.Sprintf(" AND user_id = $%d", argIndex)
+		args = append(args, userID)
+		argIndex++
+	}
+
+	if status != "" {
+		query += fmt.Sprintf(" AND status = $%d", argIndex)
+		args = append(args, status)
+		argIndex++
+	}
+
+	query += fmt.Sprintf(" ORDER BY created_at DESC LIMIT $%d OFFSET $%d", argIndex, argIndex+1)
+	args = append(args, limit, offset)
+
+	rows, err := db.QueryContext(ctx, query, args...)
+	if err != nil {
+		span.RecordError(err)
+		logrus.WithError(err).Error("Failed to query orders")
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to retrieve orders"})
+		return
+	}
+	defer rows.Close()
+
+	var orders []Order
+	for rows.Next() {
+		var order Order
+		err := rows.Scan(&order.ID, &order.UserID, &order.ProductID, &order.Quantity,
+			&order.TotalPrice, &order.Status, &order.CreatedAt, &order.UpdatedAt)
+		if err != nil {
+			span.RecordError(err)
+			logrus.WithError(err).Error("Failed to scan order")
+			continue
+		}
+		orders = append(orders, order)
+	}
+
+	// Record metrics
+	requestCounter.Add(ctx, 1, metric.WithAttributes(
+		attribute.String("method", "GET"),
+		attribute.String("endpoint", "/orders"),
+	))
+	requestDuration.Record(ctx, time.Since(start).Seconds(), metric.WithAttributes(
+		attribute.String("method", "GET"),
+		attribute.String("endpoint", "/orders"),
+	))
+
+	span.SetAttributes(attribute.Int("orders.count", len(orders)))
+
+	logrus.WithFields(logrus.Fields{
+		"user_id": userID,
+		"status": status,
+		"count": len(orders),
+	}).Info("Retrieved orders")
+
+	c.JSON(http.StatusOK, gin.H{
+		"orders": orders,
+		"total": len(orders),
+		"limit": limit,
+		"offset": offset,
+	})
+}
+
+// getOrder handles GET /orders/:id
+func getOrder(c *gin.Context) {
+	ctx := c.Request.Context()
+	span := trace.SpanFromContext(ctx)
+	start := time.Now()
+
+	orderID := c.Param("id")
+	span.SetAttributes(attribute.String("order.id", orderID))
+
+	query := "SELECT id, user_id, product_id, quantity, total_price, status, created_at, updated_at FROM orders WHERE id = $1"
+	row := db.QueryRowContext(ctx, query, orderID)
+
+	var order Order
+	err := row.Scan(&order.ID, &order.UserID, &order.ProductID, &order.Quantity,
+		&order.TotalPrice, &order.Status, &order.CreatedAt, &order.UpdatedAt)
+
+	if err != nil {
+		if err == sql.ErrNoRows {
+			span.SetAttributes(attribute.String("error.type", "not_found"))
+			c.JSON(http.StatusNotFound, gin.H{"error": "Order not found"})
+			return
+		}
+		span.RecordError(err)
+		logrus.WithError(err).Error("Failed to retrieve order")
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to retrieve order"})
+		return
+	}
+
+	// Record metrics
+	requestCounter.Add(ctx, 1, metric.WithAttributes(
+		attribute.String("method", "GET"),
+		attribute.String("endpoint", "/orders/{id}"),
+	))
+	requestDuration.Record(ctx, time.Since(start).Seconds(), metric.WithAttributes(
+		attribute.String("method", "GET"),
+		attribute.String("endpoint", "/orders/{id}"),
+	))
+
+	logrus.WithField("order_id", orderID).Info("Retrieved order")
+	c.JSON(http.StatusOK, order)
+}
+
+// updateOrderStatus handles PUT /orders/:id/status
+func updateOrderStatus(c *gin.Context) {
+	ctx := c.Request.Context()
+	span := trace.SpanFromContext(ctx)
+	start := time.Now()
+
+	orderID := c.Param("id")
+	span.SetAttributes(attribute.String("order.id", orderID))
+
+	var req struct {
+		Status string `json:"status" binding:"required"`
+	}
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		span.RecordError(err)
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	span.SetAttributes(attribute.String("order.status", req.Status))
+
+	query := "UPDATE orders SET status = $1, updated_at = $2 WHERE id = $3"
+	result, err := db.ExecContext(ctx, query, req.Status, time.Now(), orderID)
+	if err != nil {
+		span.RecordError(err)
+		logrus.WithError(err).Error("Failed to update order status")
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update order status"})
+		return
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		span.RecordError(err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update order status"})
+		return
+	}
+
+	if rowsAffected == 0 {
+		span.SetAttributes(attribute.String("error.type", "not_found"))
+		c.JSON(http.StatusNotFound, gin.H{"error": "Order not found"})
+		return
+	}
+
+	// Record metrics
+	requestCounter.Add(ctx, 1, metric.WithAttributes(
+		attribute.String("method", "PUT"),
+		attribute.String("endpoint", "/orders/{id}/status"),
+	))
+	requestDuration.Record(ctx, time.Since(start).Seconds(), metric.WithAttributes(
+		attribute.String("method", "PUT"),
+		attribute.String("endpoint", "/orders/{id}/status"),
+	))
+
+	logrus.WithFields(logrus.Fields{
+		"order_id": orderID,
+		"status": req.Status,
+	}).Info("Updated order status")
+
+	c.JSON(http.StatusOK, gin.H{"message": "Order status updated successfully"})
+}
+
 // healthCheck handles GET /health
 func healthCheck(c *gin.Context) {
 	ctx := c.Request.Context()
@@ -320,6 +521,9 @@ func main() {
 	// Routes
 	r.GET("/health", healthCheck)
 	r.POST("/orders", createOrder)
+	r.GET("/orders", getOrders)
+	r.GET("/orders/:id", getOrder)
+	r.PUT("/orders/:id/status", updateOrderStatus)
 
 	// Start server
 	port := os.Getenv("PORT")
