@@ -111,27 +111,14 @@ def setup_telemetry():
     
     return tracer, get_meter(__name__)
 
-# Initialize telemetry
-tracer, meter = setup_telemetry()
+# Initialize telemetry (will be called after app is created)
+tracer = None
+meter = None
 
-# Custom metrics
-request_counter = meter.create_counter(
-    name="product_service_requests_total",
-    description="Total number of requests to product service",
-    unit="1"
-)
-
-request_duration = meter.create_histogram(
-    name="product_service_request_duration_seconds",
-    description="Request duration in seconds",
-    unit="s"
-)
-
-products_in_stock = meter.create_up_down_counter(
-    name="products_in_stock_total",
-    description="Total number of products in stock",
-    unit="1"
-)
+# Custom metrics (will be initialized after telemetry setup)
+request_counter = None
+request_duration = None
+products_in_stock = None
 
 # Health check endpoint
 @app.route('/health', methods=['GET'])
@@ -344,8 +331,7 @@ def slow_products():
             'products': []
         }), 200
 
-# Initialize database
-@app.before_first_request
+# Initialize database function
 def create_tables():
     """Create database tables and seed with sample data"""
     db.create_all()
@@ -367,9 +353,31 @@ def create_tables():
         logger.info("Seeded database with sample products", count=len(sample_products))
 
 if __name__ == '__main__':
-    # Create tables
+    # Initialize telemetry after app is created
+    tracer, meter = setup_telemetry()
+    
+    # Initialize metrics
+    request_counter = meter.create_counter(
+        name="product_service_requests_total",
+        description="Total number of requests to product service",
+        unit="1"
+    )
+    
+    request_duration = meter.create_histogram(
+        name="product_service_request_duration_seconds",
+        description="Request duration in seconds",
+        unit="s"
+    )
+    
+    products_in_stock = meter.create_up_down_counter(
+        name="products_in_stock_total",
+        description="Total number of products in stock",
+        unit="1"
+    )
+    
+    # Create tables and seed data
     with app.app_context():
-        db.create_all()
+        create_tables()
     
     # Run the application
     port = int(os.getenv('PORT', 5000))
