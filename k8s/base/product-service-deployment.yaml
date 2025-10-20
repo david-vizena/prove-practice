@@ -29,7 +29,7 @@ spec:
         - name: PORT
           value: "5000"
         - name: DATABASE_URL
-          value: "sqlite:///app/data/products.db"
+          value: "sqlite:///:memory:"
         - name: JAEGER_AGENT_HOST
           value: "jaeger-collector.monitoring.svc.cluster.local"
         - name: JAEGER_AGENT_PORT
